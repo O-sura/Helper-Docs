@@ -220,7 +220,7 @@ helm install apim-gw ./gateway
 
 <br>
 
-#### Deploying With KM Seperated: 
+### Deploying With KM Seperated: 
 
 Follow the same deployment steps above for Gateway and the Traffic Manager components. 
 
