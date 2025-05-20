@@ -72,23 +72,155 @@ priority: 10
 Required Dockerfiles can be found in the [docker-apim](https://github.com/wso2/docker-apim) repo and follow the given steps below for preparing the necessary images.
 
 #### Preparing the Docker Images
+
+To fully comply with OpenShift’s security model especially its use of arbitrary user IDs, user has to create a custom Docker image tailored for OpenShift environments. Following are the steps required for modifying the image to ensure compatibility, including how to set group ownership to the root group (GID 0), which allows access when OpenShift assigns a random UID at runtime.
+
+The official WSO2 Docker images run as a non-root user with a fixed UID. While that works on standard Kubernetes clusters, OpenShift often injects a random UID and restricts container privileges. To prevent permission issues, update the image to:
+
+1. Allow group write access to required directories
+2. Assign root group ownership (GID 0)
+
+Also 
+
 1. Starting from v4.5.0, each component has a separate Docker image (All-in-one, Control-plane, Gateway, Traffic-manager).
 2. These Docker images do not contain any database connectors; therefore, we need to build custom Docker images based on each Docker image in order to make the deployment work with a seperate DB.
 3. Download a connector which is compatible with the DB version and copy the connector while building the image
 
-Ex:
+Ex: Following is a sample modified dockerfile created using the existing ```ubuntu/apim``` as the base image. 
 ```Dockerfile
+FROM ubuntu:24.04
+
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en' LC_ALL='en_US.UTF-8'
+
+# install dependencies
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata curl ca-certificates fontconfig locales python-is-python3 libxml2-utils netcat-traditional unzip wget \
+    && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen \
+    && locale-gen en_US.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_VERSION=jdk-21.0.5+11
+ENV JAVA_HOME=/opt/java/openjdk \
+    PATH="/opt/java/openjdk/bin:$PATH"
+
+# install Temurin OpenJDK 21
+RUN set -eux; \
+    ARCH="$(dpkg --print-architecture)"; \
+    case "${ARCH}" in \
+       amd64) \
+         ESUM='3c654d98404c073b8a7e66bffb27f4ae3e7ede47d13284c132d40a83144bfd8c'; \
+         BINARY_URL='https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jdk_x64_linux_hotspot_21.0.5_11.tar.gz'; \
+         ;; \
+       arm64) \
+         ESUM='6482639ed9fd22aa2e704cc366848b1b3e1586d2bf1213869c43e80bca58fe5c'; \
+         BINARY_URL='https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jdk_aarch64_linux_hotspot_21.0.5_11.tar.gz'; \
+         ;; \
+       ppc64el) \
+         ESUM='3c6f4c358facfb6c19d90faf02bfe0fc7512d6b0e80ac18146bbd7e0d01deeef'; \
+         BINARY_URL='https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jdk_ppc64le_linux_hotspot_21.0.5_11.tar.gz'; \
+         ;; \
+       s390x) \
+         ESUM='51a7ca42cc2e8cb5f3e7a326c28912ee84ff0791a1ca66650a8c53af07510a7c'; \
+         BINARY_URL='https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11/OpenJDK21U-jdk_s390x_linux_hotspot_21.0.5_11.tar.gz'; \
+         ;; \
+       *) \
+         echo "Unsupported arch: ${ARCH}"; \
+         exit 1; \
+         ;; \
+    esac; \
+    curl -LfsSo /tmp/openjdk.tar.gz ${BINARY_URL}; \
+    echo "${ESUM} */tmp/openjdk.tar.gz" | sha256sum -c -; \
+    mkdir -p /opt/java/openjdk; \
+    cd /opt/java/openjdk; \
+    tar -xf /tmp/openjdk.tar.gz --strip-components=1; \
+    rm -rf /tmp/openjdk.tar.gz; \
+    java -Xshare:dump;
+
+LABEL maintainer="WSO2 Docker Maintainers <dev@wso2.org>" \
+      com.wso2.docker.source="https://github.com/wso2/docker-apim/releases/tag/v4.5.0.1"
+
+# set Docker image build arguments
+# build arguments for user/group configurations
+ARG USER=wso2carbon
+ARG USER_ID=10001
+ARG USER_GROUP=root
+ARG USER_GROUP_ID=0
+ARG USER_HOME=/home/${USER}
+# build arguments for WSO2 product installation
+ARG WSO2_SERVER_NAME=wso2am
+ARG WSO2_SERVER_VERSION=4.5.0
+ARG WSO2_SERVER_REPOSITORY=product-apim
+ARG WSO2_SERVER=${WSO2_SERVER_NAME}-${WSO2_SERVER_VERSION}
+ARG WSO2_SERVER_HOME=${USER_HOME}/${WSO2_SERVER}
+ARG WSO2_SERVER_DIST_URL=https://github.com/wso2/${WSO2_SERVER_REPOSITORY}/releases/download/v${WSO2_SERVER_VERSION}/${WSO2_SERVER}.zip
+# build argument for MOTD
+ARG MOTD="\n\
+Welcome to WSO2 Docker resources.\n\
+------------------------------------ \n\
+This Docker container comprises of a WSO2 product, running with its latest GA release \n\
+which is under the Apache License, Version 2.0. \n\
+Read more about Apache License, Version 2.0 here @ http://www.apache.org/licenses/LICENSE-2.0.\n"
+
+# create the non-root user and group and set MOTD login message
+RUN useradd --system \
+        --uid   "${USER_ID}" \
+        --gid   "${USER_GROUP_ID}" \   
+        --create-home --home-dir "${USER_HOME}" \
+        --shell /bin/bash \
+        "${USER}" \
+    && echo '[ ! -z "${TERM}" -a -r /etc/motd ] && cat /etc/motd' \
+        >> /etc/bash.bashrc \
+    && echo "${MOTD}" > /etc/motd
+
+
+# copy init script to user home
+COPY docker-entrypoint.sh ${USER_HOME}
+
+RUN chown ${USER} /home/${USER}/docker-entrypoint.sh \
+    && chgrp -R 0 ${USER_HOME} \
+    && chmod -R g+rwX ${USER_HOME}
+
+# install required packages
+
+# add the WSO2 product distribution to user's home directory
+RUN \
+    wget -O ${WSO2_SERVER}.zip "${WSO2_SERVER_DIST_URL}" \
+    && unzip -d ${USER_HOME} ${WSO2_SERVER}.zip \
+    && chown ${USER} -R ${WSO2_SERVER_HOME} \
+    && chgrp -R 0 ${WSO2_SERVER_HOME} \
+    && chmod -R g+rwX ${WSO2_SERVER_HOME} \
+    && mkdir ${USER_HOME}/wso2-tmp \
+    && bash -c 'mkdir -p ${USER_HOME}/solr/{indexed-data,database}' \
+    && chown ${USER} -R ${USER_HOME}/solr \
+    && chgrp -R 0 ${USER_HOME}/solr \
+    && chmod -R g+rwX ${USER_HOME}/solr \
+    && cp -r ${WSO2_SERVER_HOME}/repository/deployment/server/synapse-configs ${USER_HOME}/wso2-tmp \
+    && cp -r ${WSO2_SERVER_HOME}/repository/deployment/server/executionplans ${USER_HOME}/wso2-tmp \
+    && rm -f ${WSO2_SERVER}.zip
+
+
 # copy MySQL driver into the server’s lib directory
 COPY --chown=${USER}:${USER_GROUP} mysql-connector.jar ${WSO2_SERVER_HOME}/repository/components/lib/
-```
 
-Sample Dockerfile should look something like this:
-```Dockerfile
-FROM wso2/wso2am-acp:4.5.0-rocky
-ARG WSO2_SERVER_HOME=/home/wso2carbon/wso2am-acp-4.5.0
-# copy MySQL connector to WSO2 server lib directory
-COPY --chown=${USER}:${USER_GROUP} mysql-connector.jar ${WSO2_SERVER_HOME}/repository/components/lib/
+# remove unnecesary packages
+RUN apt-get purge -y netcat-traditional unzip wget
+
+# set the user and work directory
+USER ${USER_ID}
+WORKDIR ${USER_HOME}
+
+# set environment variables
+ENV WORKING_DIRECTORY=${USER_HOME} \
+    WSO2_SERVER_HOME=${WSO2_SERVER_HOME}
+
+# expose ports
+EXPOSE 9763 9443 9999 11111 8280 8243 5672 9711 9611 9099
+
+# initiate container and start WSO2 Carbon server
+ENTRYPOINT ["/home/wso2carbon/docker-entrypoint.sh"]
+
 ```
+After making the changes, build and push the image to the to the registry and make sure to change the helm charts so that it will use these modified images when deploying.
 
 #### Create a Database
 Ex: Connecting with an External MySQL DB in Azure
@@ -135,6 +267,16 @@ oc login <API server URL> -u <user> -p <password>
 git clone https://github.com/wso2/helm-apim.git
 ```
 
+#### Change Openshift Specific settings in values.yaml
+
+In each corresponding values.yaml file, the following changes need to be made in order to make them compatible with the openshift environment. 
+
+> 1. runAsUser: For allowing the assignment of arbitrary UIDs, you can set runAsUser as follows kubernetes.securityContext.runAsUser=null
+> 2. seLinux Support: If you need SELinux support, you can enable it by setting kubernetes.securityContext.seLinux.enabled=true
+> 3. AppArmor Support: If you need AppArmor disabled, you can do so by setting kubernetes.enableAppArmor=false
+> 4. ConfigMap Access: If your runtime user doesn't have execute access to ConfigMaps, you can fix it by setting kubernetes.configMaps.scripts.defaultMode=0457
+> 5. Seccomp: If you need to change which seccomp (secure computing mode) profile to apply, you can do it using
+kubernetes.securityContext.seccompProfile.type
 
 ---
 
@@ -147,6 +289,8 @@ git clone https://github.com/wso2/helm-apim.git
 <br>
 - Apply the helm chart using
  ```helm install <deoplyment-name> . -f default_values.yaml```
+
+[Add the helm install command which sets the values within the command itself.]
 
 ---
 

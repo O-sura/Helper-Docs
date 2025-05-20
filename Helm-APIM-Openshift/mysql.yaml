@@ -1,0 +1,68 @@
+# 1. PersistentVolumeClaim for data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  namespace: default
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+# 2. Deployment running MySQL
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: default
+spec:
+  selector:
+    matchLabels:
+      app: mysql
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      securityContext:  # Added securityContext
+        fsGroup: 1001  # Sets group ownership on the volume
+      containers:
+        - name: mysql
+          image: bitnami/mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: "RootPass123"
+            - name: MYSQL_DATABASE
+              value: "APIM_DB"
+            - name: MYSQL_USER
+              value: "apimuser"
+            - name: MYSQL_PASSWORD
+              value: "apimpass"
+          ports:
+            - containerPort: 3306
+          volumeMounts:
+            - name: data
+              mountPath: /bitnami/mysql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mysql-data
+
+---
+# 3. Service to expose it within the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: default
+spec:
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+  selector:
+    app: mysql
+
