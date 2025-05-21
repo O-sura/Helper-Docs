@@ -278,6 +278,29 @@ In each corresponding values.yaml file, the following changes need to be made in
 > 5. Seccomp: If you need to change which seccomp (secure computing mode) profile to apply, you can do it using
 kubernetes.securityContext.seccompProfile.type
 
+Ex: 
+
+```yaml
+  securityContext:
+    # -- User ID of the container
+    runAsUser: null
+    # -- SELinux context for the container
+    seLinux:
+      enabled: false
+      level: ""
+    # -- Seccomp profile for the container
+    seccompProfile:
+      # -- Seccomp profile type(RuntimeDefault, Unconfined or Localhost)
+      type: RuntimeDefault
+      localhostProfile: ""
+  # -- Enable AppArmor profiles for the deployment
+  enableAppArmor: false
+  # -- Set UNIX permissions over the executable scripts
+  configMaps:
+    scripts:
+      defaultMode: "0457"
+```
+
 ---
 
 ## APIM ALL-IN-ONE Deployment
