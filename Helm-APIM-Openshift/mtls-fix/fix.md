@@ -208,7 +208,7 @@ openssl pkcs12 -export \
 
 ```
 
-> Note: Enable ssl-passthrough in ingress or else it will terminate the cert in the ingress level 
+> Note: Enable ssl-passthrough in ingress or else it will terminate the cert in the ingress level. For distributed setup, make sure to add the cert chain validation to the gateway toml
 
 
 - Official WSO2 Guide for mtls: https://apim.docs.wso2.com/en/4.5.0/manage-apis/design/api-security/api-authentication/secure-apis-using-mutual-ssl/
