@@ -1,0 +1,548 @@
+# Copyright (c) 2022, WSO2 Inc. (http://www.wso2.org) All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+wso2:
+  # WSO2 Subscription parameters (https://wso2.com/subscription/)
+  # If provided, these parameters will be used to obtain official WSO2 product Docker images available at WSO2 Private Docker Registry (https://docker.wso2.com/)
+  # for this deployment
+  subscription:
+    username: ""
+    password: ""
+  
+  # WSO2 Choreo Analytics Parameters
+  # If provided, these parameters will be used publish analytics data to Choreo Analytics environment (https://apim.docs.wso2.com/en/latest/observe/api-manager-analytics/configure-analytics/register-for-analytics/).
+  choreoAnalytics:
+    enabled: false
+    endpoint: "https://analytics-event-auth.choreo.dev/auth/v1"
+    onpremKey: ""
+
+  # Configuration of externally installed APIM service. Configure this, if the deployment.mode is "APIM_AS_CP"
+  apim:
+    controlPlane:
+      # Hostname of the control plane
+      hostName: am.wso2.com
+      # K8s service name (if in another namespace, `<serviceName>.<namespace>`) of the control plane
+      serviceName: wso2am-single-node-am-service.apim
+      # List of K8s service names of control plane, which Choreo Connect listen for events
+      # If list is empty, default to controlPlane.serviceName
+      # eventListeners:
+      #   - wso2am-pattern-1-am-1-service.apim
+      #   - wso2am-pattern-1-am-2-service.apim
+      eventListeners: []
+      # Skip SSL cert verification of control plane cert for the requests made from Adapter to the control plane
+      skipSSLVerification: false
+
+    # List of K8s service names of the traffic managers. If list is empty, default to controlPlane.eventListeners
+    # trafficManagers:
+    #   - wso2am-pattern-1-am-1-service.apim
+    #   - wso2am-pattern-1-am-2-service.apim
+    trafficManagers: []
+
+  deployment:
+    # Deployment option: one of "STANDALONE" or "APIM_AS_CP"
+    # Refer deployment options: https://apim.docs.wso2.com/en/4.2.0/deploy-and-publish/deploy-on-gateway/choreo-connect/getting-started/deploy/cc-deploy-overview/
+    mode: "STANDALONE"
+
+    # Label (environment) name of the deployment
+    labelName: "Default"
+    
+    # If a custom image must be used, define the docker registry. Default to DockerHub. If subscription specified it will be "docker.wso2.com"
+    dockerRegistry: ""
+
+    # Image pull secrets to pull images from docker registry. If subscriptions are specified a secret with subscriptions details are created and imagePullSecrets will be default to it.
+    imagePullSecrets: []
+
+    adapter:
+      # Docker registry. If this value is not empty, this overrides the value in 'wso2.deployment.dockerRegistry'
+      dockerRegistry: ""
+      # Image name for adapter
+      imageName: "choreo-connect-adapter"
+      # Image tag for adapter
+      imageTag: "1.2.0.66-SNAPSHOT"
+      # Refer to the Kubernetes documentation on updating images (https://kubernetes.io/docs/concepts/containers/images/#updating-images)
+      imagePullPolicy: IfNotPresent
+      # Pod count
+      replicaCount: 1
+
+      ingress:
+        # Create ingress resource for adapter Rest endpoint. Adapter ingress is disabled when the Choreo Connect Mode is "APIM_AS_CP" (i.e. not "STANDALONE")
+        # even it is enabled with this config
+        enabled: true
+        # Hostname for adapter in STANDALONE mode
+        hostname: adapter.wso2.com
+        # TLS secret for the adapter host. Using default secret if not specified
+        tlsSecretName: ""
+        # Annotations for the adapter Ingress
+        annotations:
+          kubernetes.io/ingress.class: nginx
+          nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+
+      # Resources for the adapter container
+      resources:
+        requests:
+          memory: "500Mi"
+          cpu: "500m"
+        limits:
+          memory: "500Mi"
+          cpu: "500m"
+      
+      # Affinity for adapter pods assignment
+      # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+      affinity: {}
+
+      # Node labels for adapter pods assignment
+      # ref: https://kubernetes.io/docs/user-guide/node-selection/
+      nodeSelector: {}
+
+      # Tolerations for adapter pods assignment
+      # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      tolerations: []
+
+      # Auto mount Service Account Token to the pod
+      automountServiceAccountToken: false
+      
+      # Security context of the the adapter pod
+      # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+      podSecurityContext:
+        runAsUser: 10500
+        runAsGroup: 10500
+      
+      # Security context of the the adapter container
+      # ref ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
+      containerSecurityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - all
+
+      # Indicates whether the container is running
+      livenessProbe:
+        # Number of time probe should be failed before mark fail
+        failureThreshold: 3
+        # Number of seconds after the container has started before liveness probes are initiated
+        initialDelaySeconds: 10
+        # How often (in seconds) to perform the probe
+        periodSeconds: 30
+      # Indicates whether the container is ready to service requests
+      readinessProbe:
+        # Number of time probe should be failed before mark fail
+        failureThreshold: 3
+        # Number of seconds after the container has started before readiness probes are initiated
+        initialDelaySeconds: 8
+        # How often (in seconds) to perform the probe
+        periodSeconds: 5
+
+      # Key value pair of annotations for the pod
+      podAnnotations:
+        sidecar.istio.io/inject: "false"
+
+      # Define templated config.toml file, if empty using default config.toml
+      # Use --set-file arg as follows to specify an external templated config file
+      # --set-file wso2.deployment.adapter.configToml=<FILE_PATH_FOR_TEMPLATED_CONFIG_TOML>
+      #
+      # Make sure to have existing templates already provided by the Helm Chart within your configuration files,
+      # otherwise you may lose configurations set with the values.yaml file.
+      configToml: ""
+
+      # Define templated log_config.toml file, if empty using default log_config.toml
+      # Use --set-file arg as follows to specify an external templated config file
+      # --set-file wso2.deployment.adapter.logConfigToml=<FILE_PATH_FOR_TEMPLATED_LOG_CONFIG_TOML>
+      #
+      # Make sure to have existing templates already provided by the Helm Chart within your configuration files,
+      # otherwise you may lose configurations set with the values.yaml file.
+      logConfigToml: ""
+
+      # envOverride:
+      #   - name: cp_admin_pwd
+      #     value: admin
+      #   - name: adapter_admin_pwd
+      #     valueFrom:
+      #       secretKeyRef:
+      #         name: my-secret
+      #         key: password
+      envOverride:
+        - name: cp_admin_pwd
+          value: admin
+        - name: adapter_admin_pwd
+          value: admin
+
+      security:
+        # Hostname for SSL verification
+        sslHostname: "adapter"
+
+        adapterRestService:
+          # Enable or disable adapter Rest service
+          # If "default": enabled in "STANDALONE" mode and disabled in "APIM_AS_CP" mode
+          enabled: "default" # an string value: "default" or "true" or "false"
+          
+        # Private key and cert in PEM format
+        # for more details: https://apim.docs.wso2.com/en/4.2.0/deploy-and-publish/deploy-on-gateway/choreo-connect/security/importing-certificates-to-the-choreo-connect-truststore/#changing-the-private-certificate-of-a-component
+        # override default certs from secrets
+        # keystore:
+        #   key:
+        #     secretName: "adapter-keystore"
+        #     subPath: "tls.key"
+        #   cert:
+        #     secretName: "adapter-keystore"
+        #     subPath: "tls.crt"
+        keystore: {} # using default certs, if not defined.
+
+        # Truststore certs as an array of secrets {secretName, subPath, mountAs}
+        # override default certs from secrets
+        # truststore:
+        #   - # Name of the secret
+        #     secretName: "control-plane-cert"
+        #     # Key name of the secret
+        #     subPath: "tls.crt"
+        #     # Optional file name to mount the secret with the given name inside the container.
+        #     # Default to auto-generated file name `{secretName}-{subPath | replace "." with "-"}.pem`.
+        #     # Auto-generated file name for this sample: "control-plane-cert-tls-crt.pem"
+        #     mountAs: "controlplane.pem"
+        truststore: [] # using default certs, if not defined.
+
+        # Certs for consul integration
+        #
+        # consul:
+        #   agentCaCert:
+        #     secretName: ""
+        #     subPath: ""
+        #   clientCert:
+        #     secretName: ""
+        #     subPath: ""
+        #   clientKey:
+        #     secretName: ""
+        #     subPath: ""
+        consul: {}
+
+    # Gateway runtime (enforcer + router) deployment configurations
+    gatewayRuntime:
+      # Key value pair of annotations for the pod
+      podAnnotations: {}
+
+      # Pod count
+      replicaCount: 1
+      # Horizontal pod autoscaling configurations of gateway
+      autoscaling:
+        enabled: true
+        minReplicas: 1
+        maxReplicas: 5
+        targetCPUUtilizationPercentage: 75
+        targetMemoryUtilizationPercentage: 75
+      
+      # Affinity for gateway runtime pods assignment
+      # ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+      affinity: {}
+
+      # Node labels for gateway runtime pods assignment
+      # ref: https://kubernetes.io/docs/user-guide/node-selection/
+      nodeSelector: {}
+
+      # Tolerations for gateway runtime pods assignment
+      # ref: https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
+      tolerations: []
+
+      # Auto mount Service Account Token to the pod
+      automountServiceAccountToken: false
+
+      # Security context of the the gateway runtime pod
+      # ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-pod
+      podSecurityContext:
+        runAsUser: 10500
+        runAsGroup: 10500
+      
+      enforcer:
+        # Docker registry. If this value is not empty, this overrides the value in 'wso2.deployment.dockerRegistry'
+        dockerRegistry: ""
+        # Image name for enforcer
+        imageName: "choreo-connect-enforcer"
+        # Image tag for enforcer
+        imageTag: "1.2.0.66-SNAPSHOT"
+        # Refer to the Kubernetes documentation on updating images (https://kubernetes.io/docs/concepts/containers/images/#updating-images)
+        imagePullPolicy: IfNotPresent
+
+        # envOverride:
+        #   - name: enforcer_admin_pwd
+        #     value: admin
+        #   - name: tm_admin_pwd
+        #     valueFrom:
+        #       secretKeyRef:
+        #         name: my-secret
+        #         key: tm_password
+        envOverride:
+          - name: JAVA_OPTS
+            value: "-Dhttpclient.hostnameVerifier=AllowAll -Xms512m -Xmx512m"
+          - name: enforcer_admin_pwd
+            value: "admin"
+          - name: tm_admin_pwd
+            value: "admin"
+        
+        # enforcer dropins JARs
+        # dropins:
+        #   - configMapName: "dropins-cm1"
+        #   - configMapName: "dropins-cm2"
+        dropins: {}
+
+        # Resources for the enforcer container
+        resources:
+          requests:
+            memory: "2000Mi"
+            cpu: "1000m"
+          limits:
+            memory: "2000Mi"
+            cpu: "1000m"
+        
+        # Indicates whether the container applications is started
+        startupProbe:
+          # How often (in seconds) to perform the probe
+          periodSeconds: 5
+          # Number of time startup probe should be done before mark fail
+          failureThreshold: 30
+        # Indicates whether the container is running
+        livenessProbe:
+          # Number of time probe should be failed before mark fail
+          failureThreshold: 3
+          # Number of seconds after the container has started before liveness probes are initiated
+          initialDelaySeconds: 10
+          # How often (in seconds) to perform the probe
+          periodSeconds: 30
+        # Indicates whether the container is ready to service requests
+        readinessProbe:
+          # Number of time probe should be failed before mark fail
+          failureThreshold: 3
+          # Number of seconds after the container has started before readiness probes are initiated
+          initialDelaySeconds: 8
+          # How often (in seconds) to perform the probe
+          periodSeconds: 5
+
+        # Security context of the the adapter container
+        # ref ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - all
+
+        security:
+          # Hostname for SSL verification
+          sslHostname: "enforcer"
+
+          # private key and cert in PEM format
+          # for more details: https://apim.docs.wso2.com/en/4.2.0/deploy-and-publish/deploy-on-gateway/choreo-connect/security/importing-certificates-to-the-choreo-connect-truststore/#changing-the-private-certificate-of-a-component
+          # override default certs from secrets
+          # keystore:
+          #   key:
+          #     secretName: "enforcer-keystore"
+          #     subPath: "tls.key"
+          #   cert:
+          #     secretName: "enforcer-keystore"
+          #     subPath: "tls.crt"
+          keystore: {} # using default certs, if not defined
+
+          # Passing end user attributes to the backend
+          # ref https://apim.docs.wso2.com/en/latest/deploy-and-publish/deploy-on-gateway/choreo-connect/passing-enduser-attributes-to-the-backend-via-choreo-connect/
+          backendJWT:
+            enabled: false
+            # keystore:
+            #   key:
+            #     secretName: "backend-jwt-keystore"
+            #     subPath: "backend-jwt.key"
+            #   cert:
+            #     secretName: "backend-jwt-keystore"
+            #     subPath: "backend-jwt.pem"
+            keystore: {}
+
+          # Test token issuer
+          testTokenIssuer:
+            # Test token should be disabled in a production deployment
+            enabled: true
+
+          # Truststore certs as an array of secrets {secretName, subPath, mountAs}
+          # override default certs from secrets
+          # truststore:
+          #   - # Name of the secret
+          #     secretName: "control-plane-cert"
+          #     # Key name of the secret
+          #     subPath: "tls.crt"
+          #     # Optional file name to mount the secret with the given name inside the container.
+          #     # Default to auto-generated file name `{secretName}-{subPath | replace "." with "-"}.pem`.
+          #     # Auto-generated file name for this sample: "control-plane-cert-tls-crt.pem"
+          #     mountAs: "controlplane.pem"
+          truststore: [] # using default certs, if not defined.
+
+        # Define templated log4j2.properties file, if empty using default log4j2.properties
+        log4j2Properties: ""
+
+      router:
+        # Docker registry. If this value is not empty, this overrides the value in 'wso2.deployment.dockerRegistry'
+        dockerRegistry: ""
+        # Image name for router
+        imageName: "choreo-connect-router"
+        # Image tag for router
+        imageTag: "1.2.0.66-SNAPSHOT"
+        # Refer to the Kubernetes documentation on updating images (https://kubernetes.io/docs/concepts/containers/images/#updating-images)
+        imagePullPolicy: IfNotPresent
+
+        ingress:
+          # If enabled, create the ingress for gateway
+          enabled: true
+          # Hostname for gateway
+          hostname: gw.wso2.com
+          # TLS secret for the gateway host. Using default secret if not specified
+          tlsSecretName: ""
+          # Annotations for the gateway Ingress
+          annotations:
+            kubernetes.io/ingress.class: nginx
+            nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+            nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          # Port of the router service to route requests, default to HTTPS port.
+          # Use 9090 to route requests to HTTP port, make sure to update the annotations 'nginx.ingress.kubernetes.io/backend-protocol' as HTTP
+          targetPort: 9095
+
+        # envOverride:
+        #   - name: CONCURRENCY
+        #     value: 2
+        envOverride: []
+
+        # Resources for the router container
+        resources:
+          requests:
+            memory: "500Mi"
+            cpu: "1000m"
+          limits:
+            memory: "500Mi"
+            cpu: "1000m"
+        
+        # Indicates whether the container applications is started
+        startupProbe:
+          # How often (in seconds) to perform the probe
+          periodSeconds: 5
+          # Number of time startup probe should be done before mark fail
+          failureThreshold: 30
+        # Indicates whether the container is running
+        livenessProbe:
+          # Number of time probe should be failed before mark fail
+          failureThreshold: 3
+          # Number of seconds after the container has started before liveness probes are initiated
+          initialDelaySeconds: 20
+          # How often (in seconds) to perform the probe
+          periodSeconds: 10
+        # Indicates whether the container is ready to service requests
+        readinessProbe:
+          # Number of time probe should be failed before mark fail
+          failureThreshold: 3
+          # Number of seconds after the container has started before readiness probes are initiated
+          initialDelaySeconds: 20
+          # How often (in seconds) to perform the probe
+          periodSeconds: 5
+
+        # Security context of the the adapter container
+        # ref ref: https://kubernetes.io/docs/tasks/configure-pod-container/security-context/#set-the-security-context-for-a-container
+        containerSecurityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+              - all
+
+        security:
+          # Trusted backend certs in PEM format
+          # backendCaCerts:
+          #   secretName: "trusted-ca-certs"
+          #   subPath: "ca-certs.crt"
+          backendCaCerts: {}
+          # private key and cert in PEM format
+          # for more details: https://apim.docs.wso2.com/en/4.2.0/deploy-and-publish/deploy-on-gateway/choreo-connect/security/importing-certificates-to-the-choreo-connect-truststore/#changing-the-private-certificate-of-a-component
+          # override default certs from secrets
+          # keystore:
+          #   key:
+          #     secretName: "router-keystore"
+          #     subPath: "tls.key"
+          #   cert:
+          #     secretName: "router-keystore"
+          #     subPath: "tls.crt"
+          keystore: {} # using default certs, if not defined.
+        
+        debug:
+          # Store heap profile data for analyzing memory leaks
+          heapProfile:
+            # Mount an K8s empty dir to write profile data
+            mountEmptyDir: false
+            # Path to mount the empty dir
+            mountPath: /var/log/envoy
+
+        # Envoy admin API configuration
+        envoy_admin_api:
+          # Enable or disable the envoy admin API. Credentials are only injected when enabled is true.
+          enabled: true
+          # Username for basic auth on the admin API.
+          # Provide a plain string via 'value', or reference a pre-existing secret via 'valueFrom'.
+          username:
+            value: ""
+            # valueFrom:
+            #   secretKeyRef:
+            #     name: "router-admin-credentials"
+            #     key: "username"
+          # Password for basic auth on the admin API.
+          # Provide a plain string via 'value', or reference a pre-existing secret via 'valueFrom'.
+          password:
+            value: ""
+            # valueFrom:
+            #   secretKeyRef:
+            #     name: "router-admin-credentials"
+            #     key: "password"
+
+    volumeConfigs: []
+      # Name for the volume configuration
+      # - name: ""
+      #   # Resource specific details
+      #   resource:
+      #     # The kind of resource: ConfigMap OR  Secret (CASE SENSITIVE)
+      #     kind: "" 
+      #     # Name of the ConfigMap or Secret
+      #     name: ""
+      #   # Mount related details
+      #   mount:
+      #     # The container name that requires this volume one of 'choreo-connect-adapter'/'choreo-connect-router' or 'choreo-connect-enforcer'
+      #     container: "" 
+      #     # The mount path within the container
+      #     path: ""  
+      #     # Whether the volume should be mounted in read-only mode (if needed)
+      #     readOnly: false
+      #     # Optional subpath within the volume (if needed)
+      #     subPath: "" 
+
+
+kubernetes:
+  # Service account configurations
+  serviceAccount:
+    # Specifies whether a service account should be created
+    create: true
+    # Annotations to add to the service account
+    annotations: {}
+    # The name of the service account to use
+    # If not set and create is true, a name is generated using the fullname template
+    name: ""
+
+  # Configure common ingress properties for all ingress resources
+  ingress:
+    className: ""
+
+# Name to override. Default to "choreo-connect"
+nameOverride: ""
+# Full name to override. Default to "<RELEASE_NAME>-choreo-connect"
+fullnameOverride: ""
+
