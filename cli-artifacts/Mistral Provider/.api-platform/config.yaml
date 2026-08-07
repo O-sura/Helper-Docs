@@ -1,0 +1,13 @@
+version: 1.0.0
+filePaths:
+    deploymentArtifact: ./runtime.yaml
+    metadataFile: ./metadata.yaml
+    definition: ./definition.yaml
+    docs: ./docs
+    tests: ./tests
+governanceRulesets: []
+autoSync:
+    gatewayArtifactFromDefinition: true
+ai-workspace:
+    name: default
+    portalRoot: .

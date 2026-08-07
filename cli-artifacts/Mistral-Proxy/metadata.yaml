@@ -1,0 +1,9 @@
+apiVersion: ai-workspace.api-platform.wso2.com/v1alpha
+kind: LlmProxyMetadata
+metadata:
+  name: mistral-proxy
+spec:
+  displayName: Mistral-Proxy
+  version: v1.0
+  associatedGateways:
+    - id: local-gateway

@@ -1,0 +1,48 @@
+# --------------------------------------------------------------------
+# Mistral LLM Proxy Configuration
+#
+# Fronts the `mistral-provider` LlmProvider. Consumers call this proxy;
+# the gateway forwards to the provider over an INTERNAL LOOPBACK hop
+# which re-enters the provider's own api-key-auth policy.
+#
+# spec.provider.auth is the credential for that loopback hop, so its
+# header must match the provider's downstream api-key-auth key
+# (X-API-Key in Mistral Provider/runtime.yaml), NOT the provider's
+# vendor auth header (Authorization).
+#
+# NOTE: `ap ai-workspace apply` strips spec.provider.auth.value from the
+# generated payload (build.go:995-999), which is what this project
+# reproduces — see the deploy step.
+# --------------------------------------------------------------------
+
+apiVersion: gateway.api-platform.wso2.com/v1
+kind: LlmProxy
+metadata:
+  name: mistral-proxy
+spec:
+  displayName: Mistral-Proxy
+  version: v1.0
+  context: /mistral-proxy
+  description: OpenAI-compatible proxy fronting the Mistral provider
+
+  # References the provider by its metadata.name. Deploy the provider first.
+  provider:
+    id: mistral-provider
+    auth:
+      type: api-key
+      # Must match the provider's api-key-auth `key` param, because this
+      # credential is consumed by the provider on the loopback hop.
+      header: X-API-Key
+      # Placeholder is fine for the reproduction: the CLI drops this field
+      # regardless of its content. In the UI path this position holds a
+      # secret reference, e.g. {{ secret "<uuid>" }}.
+      value: <PROVIDER_API_KEY>
+
+  # Consumer-facing auth. api-key-auth is mapped into the payload's
+  # `security` block rather than passed through as a policy.
+  globalPolicies:
+    - name: api-key-auth
+      version: v1
+      params:
+        key: X-API-Key
+        in: header

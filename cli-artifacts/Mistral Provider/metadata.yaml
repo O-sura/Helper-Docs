@@ -1,0 +1,9 @@
+apiVersion: ai-workspace.api-platform.wso2.com/v1alpha
+kind: LlmProviderMetadata
+metadata:
+  name: mistral-provider
+spec:
+  associatedGateways:
+    - id: local-gateway
+  displayName: Mistral Provider
+  version: v1.0
